@@ -2,6 +2,7 @@
 #include <iostream>
 #include <map>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <string>
 
 std::map<std::string, std::string> argParse(int argc, char** argv) {
@@ -50,41 +51,80 @@ class XorShift {
     uint32_t x;
 };
 
-cv::Mat renderCircles(const std::vector<Circle>& circles, cv::Size originalCanvasSize, float scale = 1.0f) {
-    cv::Mat canvas = cv::Mat::zeros(originalCanvasSize, CV_32FC3);
-    cv::Mat canvasColorsAccum = cv::Mat::zeros(originalCanvasSize, CV_32FC3);
-    cv::Mat canvasCounts = cv::Mat::zeros(originalCanvasSize, CV_32SC1);
+std::optional<cv::Vec2i> calcCircleRangeY(const Circle& circle, const int x,
+                                          const int imgHeight) {
+    const float xFloat = static_cast<float>(x);
+    const float dx = xFloat - circle.center.x;
+    const float radiusSq = circle.radius * circle.radius;
+    const float distSq = dx * dx;
+    if (distSq > radiusSq) {
+        return std::nullopt;
+    }
+    const float dy = std::sqrt(radiusSq - distSq);
+    int yStart = static_cast<int>(std::ceil(circle.center.y - dy));
+    int yEnd = static_cast<int>(std::floor(circle.center.y + dy));
+    yStart = std::max(0, yStart);
+    yEnd = std::min(imgHeight - 1, yEnd);
+    return cv::Vec2i(yStart, yEnd);
+}
+
+std::optional<cv::Vec2i> calcCircleRangeX(const Circle& circle, const int y,
+                                          const int imgWidth) {
+    const float yFloat = static_cast<float>(y);
+    const float dy = yFloat - circle.center.y;
+    const float radiusSq = circle.radius * circle.radius;
+    const float distSq = dy * dy;
+    if (distSq > radiusSq) {
+        return std::nullopt;
+    }
+    const float dx = std::sqrt(radiusSq - distSq);
+    int xStart = static_cast<int>(std::ceil(circle.center.x - dx));
+    int xEnd = static_cast<int>(std::floor(circle.center.x + dx));
+    xStart = std::max(0, xStart);
+    xEnd = std::min(imgWidth - 1, xEnd);
+    return cv::Vec2i(xStart, xEnd);
+}
+
+cv::Mat renderCircles(const std::vector<Circle>& circles,
+                      const cv::Size canvasSize, const float scale = 1.0f) {
+    cv::Mat canvas = cv::Mat::zeros(canvasSize, CV_32FC3);
+    cv::Mat canvasColorsAccum = cv::Mat::zeros(canvasSize, CV_32FC3);
+    cv::Mat canvasCounts = cv::Mat::zeros(canvasSize, CV_32SC1);
     for (auto circle : circles) {
         circle.center.x *= scale;
         circle.center.y *= scale;
         circle.radius *= scale;
-        const int xStart = std::max(
-            0, static_cast<int>(std::floor(circle.center.x - circle.radius)));
-        const int xEnd = std::min(
-            canvas.cols - 1,
-            static_cast<int>(std::ceil(circle.center.x + circle.radius)));
         const int yStart = std::max(
-            0, static_cast<int>(std::floor(circle.center.y - circle.radius)));
+            0, static_cast<int>(std::ceil(circle.center.y - circle.radius)));
         const int yEnd = std::min(
             canvas.rows - 1,
-            static_cast<int>(std::ceil(circle.center.y + circle.radius)));
-        const float radiusSq = circle.radius * circle.radius;
+            static_cast<int>(std::floor(circle.center.y + circle.radius)));
         for (int y = yStart; y <= yEnd; ++y) {
-            for (int x = xStart; x <= xEnd; ++x) {
-                const float dx = static_cast<float>(x) - circle.center.x;
-                const float dy = static_cast<float>(y) - circle.center.y;
-                const float distSq = dx * dx + dy * dy;
-                if (distSq <= radiusSq) {
-                    canvasColorsAccum.at<cv::Vec3f>(y, x) += circle.color;
-                    canvasCounts.at<int>(y, x) += 1;
-                }
+            const auto xRangeOpt = calcCircleRangeX(circle, y, canvas.cols);
+            if (!xRangeOpt.has_value()) {
+                continue;
+            }
+            const cv::Vec2i xRange = xRangeOpt.value();
+            canvasColorsAccum.at<cv::Vec3f>(y, xRange[0]) += circle.color;
+            canvasCounts.at<int>(y, xRange[0]) += 1;
+            if (xRange[1] != canvas.cols - 1) {
+                canvasColorsAccum.at<cv::Vec3f>(y, xRange[1] + 1) -=
+                    circle.color;
+                canvasCounts.at<int>(y, xRange[1] + 1) -= 1;
             }
         }
     }
     for (int y = 0; y < canvas.rows; ++y) {
+        for (int x = 1; x < canvas.cols; ++x) {
+            canvasColorsAccum.at<cv::Vec3f>(y, x) +=
+                canvasColorsAccum.at<cv::Vec3f>(y, x - 1);
+            canvasCounts.at<int>(y, x) += canvasCounts.at<int>(y, x - 1);
+        }
+    }
+
+    for (int y = 0; y < canvas.rows; ++y) {
         for (int x = 0; x < canvas.cols; ++x) {
-            const cv::Vec3f colorAccum =
-                canvasColorsAccum.at<cv::Vec3f>(y, x);
+            const cv::Vec3f colorAccum = canvasColorsAccum.at<cv::Vec3f>(y, x);
             const int count = canvasCounts.at<int>(y, x);
             if (count > 0) {
                 canvas.at<cv::Vec3f>(y, x) =
@@ -99,7 +139,8 @@ cv::Mat renderCircles(const std::vector<Circle>& circles, cv::Size originalCanva
             outputImage.at<cv::Vec3b>(y, x) = cv::Vec3b(
                 static_cast<uchar>(std::clamp(color[0] * 255.0f, 0.0f, 255.0f)),
                 static_cast<uchar>(std::clamp(color[1] * 255.0f, 0.0f, 255.0f)),
-                static_cast<uchar>(std::clamp(color[2] * 255.0f, 0.0f, 255.0f)));
+                static_cast<uchar>(
+                    std::clamp(color[2] * 255.0f, 0.0f, 255.0f)));
         }
     }
     return outputImage;
@@ -175,8 +216,7 @@ int main(int argc, char** argv) {
     originalImage.convertTo(image, CV_32FC3, 1.0 / 255.0);
     const float scaleFactor =
         200.0f / static_cast<float>(std::max(image.cols, image.rows));
-    const int newWidth =
-        static_cast<int>(std::round(image.cols * scaleFactor));
+    const int newWidth = static_cast<int>(std::round(image.cols * scaleFactor));
     const int newHeight =
         static_cast<int>(std::round(image.rows * scaleFactor));
     cv::resize(image, image, cv::Size(newWidth, newHeight));
@@ -197,28 +237,32 @@ int main(int argc, char** argv) {
         cv::Mat canvasColorsAccum = cv::Mat::zeros(image.size(), CV_32FC3);
         cv::Mat canvasCounts = cv::Mat::zeros(image.size(), CV_32SC1);
         for (const auto& circle : circles) {
-            const int xStart = std::max(
-                0,
-                static_cast<int>(std::floor(circle.center.x - circle.radius)));
-            const int xEnd = std::min(
-                image.cols - 1,
-                static_cast<int>(std::ceil(circle.center.x + circle.radius)));
             const int yStart = std::max(
                 0,
-                static_cast<int>(std::floor(circle.center.y - circle.radius)));
+                static_cast<int>(std::ceil(circle.center.y - circle.radius)));
             const int yEnd = std::min(
                 image.rows - 1,
-                static_cast<int>(std::ceil(circle.center.y + circle.radius)));
+                static_cast<int>(std::floor(circle.center.y + circle.radius)));
             for (int y = yStart; y <= yEnd; ++y) {
-                for (int x = xStart; x <= xEnd; ++x) {
-                    const float dx = static_cast<float>(x) - circle.center.x;
-                    const float dy = static_cast<float>(y) - circle.center.y;
-                    const float distSq = dx * dx + dy * dy;
-                    if (distSq <= circle.radius * circle.radius) {
-                        canvasColorsAccum.at<cv::Vec3f>(y, x) += circle.color;
-                        canvasCounts.at<int>(y, x) += 1;
-                    }
+                const auto xRangeOpt = calcCircleRangeX(circle, y, image.cols);
+                if (!xRangeOpt.has_value()) {
+                    continue;
                 }
+                const cv::Vec2i xRange = xRangeOpt.value();
+                canvasColorsAccum.at<cv::Vec3f>(y, xRange[0]) += circle.color;
+                canvasCounts.at<int>(y, xRange[0]) += 1;
+                if (xRange[1] != image.cols - 1) {
+                    canvasColorsAccum.at<cv::Vec3f>(y, xRange[1] + 1) -=
+                        circle.color;
+                    canvasCounts.at<int>(y, xRange[1] + 1) -= 1;
+                }
+            }
+        }
+        for (int y = 0; y < image.rows; ++y) {
+            for (int x = 1; x < image.cols; ++x) {
+                canvasColorsAccum.at<cv::Vec3f>(y, x) +=
+                    canvasColorsAccum.at<cv::Vec3f>(y, x - 1);
+                canvasCounts.at<int>(y, x) += canvasCounts.at<int>(y, x - 1);
             }
         }
 
@@ -230,36 +274,20 @@ int main(int argc, char** argv) {
 
         for (int i = 0; i < numberOfCircles; ++i) {
             cv::Vec3f dLdcolor = cv::Vec3f(0.0f, 0.0f, 0.0f);
-
             const auto& circle = circles[i];
-            const int xStart = std::max(
-                0,
-                static_cast<int>(std::floor(circle.center.x - circle.radius)) -
-                    1);
-            const int xEnd = std::min(
-                image.cols - 1,
-                static_cast<int>(std::ceil(circle.center.x + circle.radius)) +
-                    1);
             const int yStart = std::max(
                 0,
-                static_cast<int>(std::floor(circle.center.y - circle.radius)) -
-                    1);
+                static_cast<int>(std::ceil(circle.center.y - circle.radius)));
             const int yEnd = std::min(
                 image.rows - 1,
-                static_cast<int>(std::ceil(circle.center.y + circle.radius)) +
-                    1);
-            const float radiusSq = circle.radius * circle.radius;
-
+                static_cast<int>(std::floor(circle.center.y + circle.radius)));
             for (int y = yStart; y <= yEnd; ++y) {
-                for (int x = xStart; x <= xEnd; ++x) {
-                    const float xFloat = static_cast<float>(x);
-                    const float yFloat = static_cast<float>(y);
-                    const float dx = xFloat - circle.center.x;
-                    const float dy = yFloat - circle.center.y;
-
-                    const float distSq = dx * dx + dy * dy;
-                    const bool inCircle = distSq <= radiusSq;
-
+                const auto xRangeOpt = calcCircleRangeX(circle, y, image.cols);
+                if (!xRangeOpt.has_value()) {
+                    continue;
+                }
+                const cv::Vec2i xRange = xRangeOpt.value();
+                for (int x = xRange[0]; x <= xRange[1]; ++x) {
                     const cv::Vec3f& imageColor = image.at<cv::Vec3f>(y, x);
                     const cv::Vec3f& currentColorAccum =
                         canvasColorsAccum.at<cv::Vec3f>(y, x);
@@ -268,16 +296,15 @@ int main(int argc, char** argv) {
                         currentCount != 0 ? currentColorAccum /
                                                 static_cast<float>(currentCount)
                                           : cv::Vec3f(-1.0f, -1.0f, -1.0f);
-                    if (inCircle) {
-                        const cv::Vec3f diff = currentColor - imageColor;
-                        for (int c = 0; c < 3; ++c) {
-                            dLdcolor[c] +=
-                                diff[c] / static_cast<float>(currentCount);
-                        }
+                    const cv::Vec3f diff = currentColor - imageColor;
+                    for (int c = 0; c < 3; ++c) {
+                        dLdcolor[c] +=
+                            diff[c] / static_cast<float>(currentCount);
                     }
                 }
             }
 
+            const float radiusSq = circle.radius * circle.radius;
             auto calcLossDelta = [&](float deltaX, float deltaY,
                                      float deltaRadius) -> float {
                 float deltaLoss = 0.0f;
@@ -387,6 +414,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    cv::Mat finalImage = renderCircles(circles, originalImage.size(), 1.0f / scaleFactor);
+    cv::Mat finalImage =
+        renderCircles(circles, originalImage.size(), 1.0f / scaleFactor);
     cv::imwrite(outputPath, finalImage);
 }

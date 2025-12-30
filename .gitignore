@@ -1,7 +1,9 @@
 *
-
 !.gitignore
 !LICENSE
 !README.md
 !CMakeLists.txt
 !main.cpp
+!images
+!images/input.jpg
+!images/output.png

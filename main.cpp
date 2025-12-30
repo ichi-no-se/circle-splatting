@@ -313,7 +313,7 @@ int main(int argc, char** argv) {
     } else if (args.find("--iter") != args.end()) {
         numberOfIterationsStr = args.at("--iter");
     } else {
-        numberOfIterationsStr = "500";  // default value
+        numberOfIterationsStr = "1000";  // default value
     }
 
     if (args.find("-c") != args.end()) {
@@ -321,7 +321,7 @@ int main(int argc, char** argv) {
     } else if (args.find("--circles") != args.end()) {
         numberOfCirclesStr = args.at("--circles");
     } else {
-        numberOfCirclesStr = "200";  // default value
+        numberOfCirclesStr = "400";  // default value
     }
 
     if (args.find("-r") != args.end()) {
@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
     } else if (args.find("--max-radius") != args.end()) {
         initCircleMaxRadiusStr = args.at("--max-radius");
     } else {
-        initCircleMaxRadiusStr = "25";  // default value
+        initCircleMaxRadiusStr = "20";  // default value
     }
 
     if (args.find("-s") != args.end()) {

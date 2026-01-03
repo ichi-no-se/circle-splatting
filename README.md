@@ -42,7 +42,7 @@ make
 |`-i`，`--input`|入力画像のパス（必須）|-|
 |`-o`，`--output`|出力画像のパス（必須）|-|
 |`-m`，`--mode`|形状（`circle`，`square`，`diamond`，`triangle-up`，`triangle-down`，`hexagon`）|`circle`|
-|`-s`，`--shapes`|使用する図形の数|`400`|
+|`-n`，`--shapes`|使用する図形の数|`400`|
 |`-t`，`--iter`|反復回数（多いほど高精度）|`1000`|
 |`-r`，`--max-radius`|図形の**初期**最大半径<b>※</b>|`20`|
 |`-s`，`--seed`|乱数シード|`123456789`|

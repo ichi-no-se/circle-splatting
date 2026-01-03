@@ -591,11 +591,12 @@ int main(int argc, char** argv) {
 		std::cerr << "Seed must be a positive integer." << std::endl;
 		return -1;
 	}
+    
 	if (mode == "circle") {
 		runSplatting<CirclePolicy>(inputPath, outputPath, numberOfIterations,
 								   numberOfShapes, initMaxRadius, seed);
 	}
-	if (mode == "square") {
+	else if (mode == "square") {
 		runSplatting<SquarePolicy>(inputPath, outputPath, numberOfIterations,
 								   numberOfShapes, initMaxRadius, seed);
 	} else if (mode == "diamond") {
